@@ -10,10 +10,14 @@ import {
   Alert,
   ActivityIndicator,
   StyleSheet,
+  TextInput,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useWardrobeStore } from '../store/wardrobeStore';
 import { ClothingCategory } from '../types';
+import * as FileSystem from 'expo-file-system';
 
 interface AddItemFormProps {
   onClose: () => void;
@@ -23,6 +27,11 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [category, setCategory] = useState<ClothingCategory>('Верх');
   const [isLoading, setIsLoading] = useState(false);
+  const [name, setName] = useState('');
+  const [color, setColor] = useState('');
+  const [material, setMaterial] = useState('');
+  const [notes, setNotes] = useState('');
+  const [season, setSeason] = useState<string[]>(['spring', 'summer', 'autumn', 'winter']);
 
   const addItem = useWardrobeStore(state => state.addItem);
 
@@ -91,24 +100,81 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
       return;
     }
 
+    if (!name.trim()) {
+      Alert.alert('Ошибка', 'Пожалуйста, введите название вещи');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      await addItem({
-        imageUri,
-        category,
-      });
+      // Конвертируем изображение в base64
+      let base64: string;
+      if (Platform.OS === 'web') {
+        // expo-file-system.readAsStringAsync недоступен на web
+        // используем fetch + FileReader чтобы получить base64
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            const commaIndex = dataUrl.indexOf(',');
+            resolve(dataUrl.slice(commaIndex + 1));
+          };
+          reader.onerror = () => reject(new Error('Failed to read blob as data URL'));
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        base64 = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      }
+
+      // Определяем category для backend (top, bottom, shoes)
+      const categoryMap: { [key: string]: string } = {
+        'Верх': 'top',
+        'Низ': 'bottom',
+        'Обувь': 'shoes',
+      };
+
+      const itemData = {
+        name,
+        category: categoryMap[category] as any,
+        color: color || 'not specified',
+        material: material || 'not specified',
+        imageBase64: `data:image/jpeg;base64,${base64}`,
+        notes,
+        season: season,
+        userId: 'default',
+      };
+
+      console.log('📝 Сохраняем вещь:', itemData);
+      
+      await addItem(itemData);
+
       // Закрываем форму сразу после успешного сохранения
-      onClose();
+      if (Platform.OS === 'web') {
+        // window.alert на web не поддерживает колбэки, вызываем onClose после
+        window.alert('Успех: вещь добавлена!');
+        onClose();
+      } else {
+        Alert.alert('Успех', 'Вещь добавлена!', [
+          {
+            text: 'ОК',
+            onPress: onClose,
+          },
+        ]);
+      }
     } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось сохранить вещь');
-      console.error(error);
+      console.error('❌ Ошибка сохранения:', error);
+      Alert.alert('Ошибка', `Не удалось сохранить вещь: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.title}>Добавить вещь</Text>
 
       {/* Выбор фото */}
@@ -145,14 +211,26 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
         )}
       </View>
 
+      {/* Название */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Название *</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Например: Синяя рубашка"
+          value={name}
+          onChangeText={setName}
+          placeholderTextColor="#999"
+        />
+      </View>
+
       {/* Выбор категории */}
-      <View style={styles.categorySection}>
-        <Text style={styles.categoryTitle}>Категория</Text>
+      <View style={styles.section}>
+        <Text style={styles.label}>Категория *</Text>
         <View style={styles.categoryButtons}>
-          {categories.map((cat) => (
+          {['Верх', 'Низ', 'Обувь'].map((cat) => (
             <TouchableOpacity
               key={cat}
-              onPress={() => setCategory(cat)}
+              onPress={() => setCategory(cat as ClothingCategory)}
               style={[
                 styles.categoryButton,
                 category === cat && styles.categoryButtonActive,
@@ -165,6 +243,75 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
                 ]}
               >
                 {cat}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      {/* Цвет */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Цвет</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Например: Синий"
+          value={color}
+          onChangeText={setColor}
+          placeholderTextColor="#999"
+        />
+      </View>
+
+      {/* Материал */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Материал</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Например: Хлопок"
+          value={material}
+          onChangeText={setMaterial}
+          placeholderTextColor="#999"
+        />
+      </View>
+
+      {/* Заметки */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Заметки</Text>
+        <TextInput
+          style={[styles.input, styles.noteInput]}
+          placeholder="Дополнительная информация..."
+          value={notes}
+          onChangeText={setNotes}
+          placeholderTextColor="#999"
+          multiline
+        />
+      </View>
+
+      {/* Сезоны */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Сезоны</Text>
+        <View style={styles.seasonButtons}>
+          {['spring', 'summer', 'autumn', 'winter'].map((s) => (
+            <TouchableOpacity
+              key={s}
+              onPress={() => {
+                setSeason((prev) =>
+                  prev.includes(s)
+                    ? prev.filter((item) => item !== s)
+                    : [...prev, s]
+                );
+              }}
+              style={[
+                styles.seasonButton,
+                season.includes(s) && styles.seasonButtonActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.seasonButtonText,
+                  season.includes(s) && styles.seasonButtonTextActive,
+                ]}
+              >
+                {s === 'spring' ? 'Весна' : s === 'summer' ? 'Лето' : s === 'autumn' ? 'Осень' : 'Зима'}
               </Text>
             </TouchableOpacity>
           ))}
@@ -192,7 +339,7 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -209,6 +356,28 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     textAlign: 'center',
     color: '#111827',
+  },
+  section: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#111827',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#111827',
+  },
+  noteInput: {
+    minHeight: 60,
+    textAlignVertical: 'top',
   },
   photoSection: {
     marginBottom: 24,
@@ -254,15 +423,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
   },
-  categorySection: {
-    marginBottom: 24,
-  },
-  categoryTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-    color: '#111827',
-  },
   categoryButtons: {
     flexDirection: 'row',
     gap: 8,
@@ -285,9 +445,33 @@ const styles = StyleSheet.create({
   categoryButtonTextActive: {
     color: '#ffffff',
   },
+  seasonButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  seasonButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: '#e5e7eb',
+  },
+  seasonButtonActive: {
+    backgroundColor: '#8b5cf6',
+  },
+  seasonButtonText: {
+    fontWeight: '600',
+    color: '#374151',
+    fontSize: 13,
+  },
+  seasonButtonTextActive: {
+    color: '#ffffff',
+  },
   actionButtons: {
     flexDirection: 'row',
     gap: 16,
+    marginTop: 24,
+    marginBottom: 24,
   },
   actionButton: {
     flex: 1,

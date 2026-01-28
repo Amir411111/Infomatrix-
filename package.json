@@ -7,7 +7,10 @@
     "start:expo": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "server": "cd server && npm start",
+    "server:dev": "cd server && npm run dev",
+    "server:install": "cd server && npm install"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.1.3",

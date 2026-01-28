@@ -18,7 +18,7 @@ import { ClothingItem } from '../types';
 import { AddItemForm } from '../components/AddItemForm';
 
 export const WardrobeScreen: React.FC = () => {
-  const { items, loadItems, deleteItem, isLoading } = useWardrobeStore();
+  const { items, loadItems, deleteItem, isLoading, clearLocalCache } = useWardrobeStore();
   const [showAddForm, setShowAddForm] = useState(false);
 
   useEffect(() => {
@@ -26,28 +26,55 @@ export const WardrobeScreen: React.FC = () => {
   }, []);
 
   /**
+   * Очистка локального кэша
+   */
+  const handleClearCache = () => {
+    Alert.alert(
+      'Очистить кэш?',
+      'Это удалит все локальные сохранения и перезагрузит данные с сервера.',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Очистить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearLocalCache();
+              Alert.alert('Успех', 'Кэш очищен и данные перезагружены');
+            } catch (error) {
+              Alert.alert('Ошибка', 'Не удалось очистить кэш');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  /**
    * Подтверждение удаления вещи
    */
   const handleDelete = (item: ClothingItem) => {
+    const itemId = item._id || item.id;
+    
     // RN Web не поддерживает полноценные кнопки в Alert.alert,
     // поэтому подтверждение делаем через window.confirm.
     if (Platform.OS === 'web') {
       const ok = window.confirm(
-        `Удалить вещь?\n\nКатегория: ${item.category}\n\nПодтвердите удаление.`
+        `Удалить "${item.name}"?\n\nКатегория: ${item.category}\n\nПодтвердите удаление.`
       );
-      if (ok) deleteItem(item.id);
+      if (ok && itemId) deleteItem(itemId);
       return;
     }
 
     Alert.alert(
       'Удалить вещь?',
-      `Вы уверены, что хотите удалить эту вещь из категории "${item.category}"?`,
+      `Вы уверены, что хотите удалить "${item.name}" из категории "${item.category}"?`,
       [
         { text: 'Отмена', style: 'cancel' },
         {
           text: 'Удалить',
           style: 'destructive',
-          onPress: () => deleteItem(item.id),
+          onPress: () => itemId && deleteItem(itemId),
         },
       ]
     );
@@ -56,35 +83,52 @@ export const WardrobeScreen: React.FC = () => {
   /**
    * Рендер одной вещи в списке
    */
-  const renderItem = ({ item }: { item: ClothingItem }) => (
-    <View style={styles.itemContainer}>
-      <Image
-        source={{ uri: item.imageUri }}
-        style={styles.itemImage}
-        resizeMode="cover"
-      />
-      <View style={styles.itemContent}>
-        <View>
-          <Text style={styles.itemCategory}>{item.category}</Text>
-          <Text style={styles.itemDate}>
-            {new Date(item.createdAt).toLocaleDateString('ru-RU')}
-          </Text>
+  const renderItem = ({ item }: { item: ClothingItem }) => {
+    const imageUri = item.imageBase64 || item.imageUri;
+    const categoryText = item.category === 'top' ? 'Верх' : 
+                        item.category === 'bottom' ? 'Низ' :
+                        item.category === 'shoes' ? 'Обувь' : item.category;
+    
+    return (
+      <View style={styles.itemContainer}>
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.itemImage}
+          resizeMode="cover"
+        />
+        <View style={styles.itemContent}>
+          <View>
+            <Text style={styles.itemName}>{item.name || 'Вещь'}</Text>
+            <Text style={styles.itemCategory}>{categoryText}</Text>
+            {item.color && <Text style={styles.itemDetail}>Цвет: {item.color}</Text>}
+            <Text style={styles.itemDate}>
+              {item.createdAt ? new Date(item.createdAt).toLocaleDateString('ru-RU') : ''}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => handleDelete(item)}
+            style={styles.deleteButton}
+          >
+            <Text style={styles.deleteButtonText}>Удалить</Text>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={() => handleDelete(item)}
-          style={styles.deleteButton}
-        >
-          <Text style={styles.deleteButtonText}>Удалить</Text>
-        </TouchableOpacity>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
       {/* Заголовок */}
       <View style={styles.header}>
-        <Text style={styles.title}>Мой гардероб</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.title}>Мой гардероб</Text>
+          <TouchableOpacity
+            onPress={handleClearCache}
+            style={styles.clearCacheButton}
+          >
+            <Text style={styles.clearCacheButtonText}>🗑️ Кэш</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.subtitle}>
           Всего вещей: {items.length}
         </Text>
@@ -94,7 +138,7 @@ export const WardrobeScreen: React.FC = () => {
       <FlatList
         data={items}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -121,16 +165,17 @@ export const WardrobeScreen: React.FC = () => {
 
       {/* Модальное окно добавления */}
       {showAddForm && (
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={styles.modalOverlayTouchable}
-            activeOpacity={1}
-            onPress={() => setShowAddForm(false)}
+        <View 
+          style={styles.modalOverlay}
+          onTouchEnd={() => setShowAddForm(false)}
+        >
+          <View 
+            style={styles.modalContent}
+            onStartShouldSetResponder={() => true}
+            onTouchEnd={(e) => e.stopPropagation()}
           >
-            <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
-              <AddItemForm onClose={() => setShowAddForm(false)} />
-            </View>
-          </TouchableOpacity>
+            <AddItemForm onClose={() => setShowAddForm(false)} />
+          </View>
         </View>
       )}
     </View>
@@ -152,14 +197,32 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 2,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   title: {
     fontSize: 30,
     fontWeight: 'bold',
     color: '#111827',
   },
+  clearCacheButton: {
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  clearCacheButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
   subtitle: {
     color: '#6b7280',
-    marginTop: 4,
+    marginTop: 8,
     fontSize: 14,
   },
   listContent: {
@@ -186,14 +249,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  itemCategory: {
-    fontSize: 18,
+  itemName: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#111827',
   },
+  itemCategory: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  itemDetail: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
   itemDate: {
     color: '#6b7280',
-    fontSize: 14,
+    fontSize: 12,
     marginTop: 4,
   },
   deleteButton: {
@@ -250,11 +323,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
-  modalOverlayTouchable: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
   modalContent: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '90%',
   },
 });
