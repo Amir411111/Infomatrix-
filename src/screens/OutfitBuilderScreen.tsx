@@ -10,17 +10,43 @@ import {
   TouchableOpacity,
   Alert,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import { useWardrobeStore } from '../store/wardrobeStore';
 import { ClothingItem, ClothingCategory, Outfit } from '../types';
 
 export const OutfitBuilderScreen: React.FC = () => {
-  const { getItemsByCategory } = useWardrobeStore();
+  const { getItemsByCategory, items } = useWardrobeStore();
   const [outfit, setOutfit] = useState<Outfit>({});
+  const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+  const [selectedMaterial, setSelectedMaterial] = useState<string | null>(null);
+  const [materialDropdownOpen, setMaterialDropdownOpen] = useState(false);
 
-  const tops = getItemsByCategory('Верх');
-  const bottoms = getItemsByCategory('Низ');
-  const shoes = getItemsByCategory('Обувь');
+  // Получаем уникальные материалы из всех вещей
+  const uniqueMaterials = Array.from(
+    new Set(items.map(item => item.material).filter(m => m && m !== 'not specified'))
+  ).sort();
+
+  /**
+   * Фильтрует вещи по категории, сезону и материалу
+   */
+  const filterItems = (category: ClothingCategory): ClothingItem[] => {
+    let filtered = getItemsByCategory(category);
+
+    if (selectedSeason) {
+      filtered = filtered.filter(item => item.season?.includes(selectedSeason));
+    }
+
+    if (selectedMaterial) {
+      filtered = filtered.filter(item => item.material === selectedMaterial);
+    }
+
+    return filtered;
+  };
+
+  const tops = filterItems('Верх');
+  const bottoms = filterItems('Низ');
+  const shoes = filterItems('Обувь');
 
   /**
    * Выбор вещи для категории
@@ -36,14 +62,21 @@ export const OutfitBuilderScreen: React.FC = () => {
    * Очистка выбранного образа
    */
   const clearOutfit = () => {
-    Alert.alert('Очистить образ?', 'Все выбранные вещи будут сброшены', [
-      { text: 'Отмена', style: 'cancel' },
-      {
-        text: 'Очистить',
-        style: 'destructive',
-        onPress: () => setOutfit({}),
-      },
-    ]);
+    if (Platform.OS === 'web') {
+      const ok = window.confirm('Очистить образ?\n\nВсе выбранные вещи будут сброшены');
+      if (ok) {
+        setOutfit({});
+      }
+    } else {
+      Alert.alert('Очистить образ?', 'Все выбранные вещи будут сброшены', [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Очистить',
+          style: 'destructive',
+          onPress: () => setOutfit({}),
+        },
+      ]);
+    }
   };
 
   /**
@@ -69,29 +102,35 @@ export const OutfitBuilderScreen: React.FC = () => {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
           >
-            {categoryItems.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                onPress={() => selectItem(category, item)}
-                style={[
-                  styles.itemCard,
-                  selectedItem?.id === item.id && styles.itemCardSelected,
-                ]}
-              >
-                <Image
-                  source={{ uri: item.imageUri }}
-                  style={styles.itemCardImage}
-                  resizeMode="cover"
-                />
-                {selectedItem?.id === item.id && (
-                  <View style={styles.selectedOverlay}>
-                    <View style={styles.selectedCheckmark}>
-                      <Text style={styles.checkmarkText}>✓</Text>
+            {categoryItems.map((item) => {
+              const itemId = item._id || item.id;
+              const selectedId = selectedItem?._id || selectedItem?.id;
+              const isSelected = itemId === selectedId;
+              
+              return (
+                <TouchableOpacity
+                  key={itemId}
+                  onPress={() => selectItem(category, item)}
+                  style={[
+                    styles.itemCard,
+                    isSelected && styles.itemCardSelected,
+                  ]}
+                >
+                  <Image
+                    source={{ uri: item.imageBase64 || item.imageUri }}
+                    style={styles.itemCardImage}
+                    resizeMode="cover"
+                  />
+                  {isSelected && (
+                    <View style={styles.selectedOverlay}>
+                      <View style={styles.selectedCheckmark}>
+                        <Text style={styles.checkmarkText}>✓</Text>
+                      </View>
                     </View>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         )}
       </View>
@@ -119,7 +158,7 @@ export const OutfitBuilderScreen: React.FC = () => {
               {outfit.top && (
                 <View style={styles.outfitImageContainer}>
                   <Image
-                    source={{ uri: outfit.top.imageUri }}
+                    source={{ uri: outfit.top.imageBase64 || outfit.top.imageUri }}
                     style={styles.outfitImage}
                     resizeMode="cover"
                   />
@@ -129,7 +168,7 @@ export const OutfitBuilderScreen: React.FC = () => {
               {outfit.bottom && (
                 <View style={styles.outfitImageContainer}>
                   <Image
-                    source={{ uri: outfit.bottom.imageUri }}
+                    source={{ uri: outfit.bottom.imageBase64 || outfit.bottom.imageUri }}
                     style={styles.outfitImage}
                     resizeMode="cover"
                   />
@@ -139,7 +178,7 @@ export const OutfitBuilderScreen: React.FC = () => {
               {outfit.shoes && (
                 <View style={styles.outfitImageContainer}>
                   <Image
-                    source={{ uri: outfit.shoes.imageUri }}
+                    source={{ uri: outfit.shoes.imageBase64 || outfit.shoes.imageUri }}
                     style={styles.outfitImage}
                     resizeMode="cover"
                   />
@@ -165,6 +204,97 @@ export const OutfitBuilderScreen: React.FC = () => {
           </View>
         )}
 
+        {/* Фильтры */}
+        <View style={styles.filtersSection}>
+          {/* Фильтр по сезонам */}
+          <View style={styles.filterContainer}>
+            <Text style={styles.filterLabel}>Сезон:</Text>
+            <View style={styles.seasonButtonsRow}>
+              {['spring', 'summer', 'autumn', 'winter'].map((season) => {
+                const seasonNames: { [key: string]: string } = {
+                  spring: 'Весна',
+                  summer: 'Лето',
+                  autumn: 'Осень',
+                  winter: 'Зима',
+                };
+                return (
+                  <TouchableOpacity
+                    key={season}
+                    onPress={() =>
+                      setSelectedSeason(selectedSeason === season ? null : season)
+                    }
+                    style={[
+                      styles.filterButton,
+                      selectedSeason === season && styles.filterButtonActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.filterButtonText,
+                        selectedSeason === season && styles.filterButtonTextActive,
+                      ]}
+                    >
+                      {seasonNames[season]}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Фильтр по материалам */}
+          <View style={styles.filterContainer}>
+            <Text style={styles.filterLabel}>Материал:</Text>
+            <TouchableOpacity
+              style={styles.dropdownButton}
+              onPress={() => setMaterialDropdownOpen(!materialDropdownOpen)}
+            >
+              <Text style={styles.dropdownButtonText}>
+                {selectedMaterial || 'Все материалы'}
+              </Text>
+              <Text style={styles.dropdownArrow}>
+                {materialDropdownOpen ? '▲' : '▼'}
+              </Text>
+            </TouchableOpacity>
+
+            {materialDropdownOpen && (
+              <View style={styles.dropdownMenu}>
+                <TouchableOpacity
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setSelectedMaterial(null);
+                    setMaterialDropdownOpen(false);
+                  }}
+                >
+                  <Text style={styles.dropdownItemText}>Все материалы</Text>
+                </TouchableOpacity>
+                {uniqueMaterials.map((material) => (
+                  <TouchableOpacity
+                    key={material}
+                    style={[
+                      styles.dropdownItem,
+                      selectedMaterial === material && styles.dropdownItemSelected,
+                    ]}
+                    onPress={() => {
+                      setSelectedMaterial(material);
+                      setMaterialDropdownOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.dropdownItemText,
+                        selectedMaterial === material && styles.dropdownItemTextSelected,
+                      ]}
+                    >
+                      {material}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Секции выбора вещей */}
         {renderCategorySection('Верх', tops, outfit.top)}
         {renderCategorySection('Низ', bottoms, outfit.bottom)}
@@ -183,11 +313,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     paddingHorizontal: 24,
     paddingVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    ...Platform.OS === 'web' ? { boxShadow: '0 1px 2px rgba(0,0,0,0.1)' } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    }
   },
   headerTitle: {
     fontSize: 30,
@@ -208,11 +340,13 @@ const styles = StyleSheet.create({
     marginTop: 16,
     padding: 16,
     borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.OS === 'web' ? { boxShadow: '0 2px 4px rgba(0,0,0,0.1)' } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    }
   },
   outfitPreviewTitle: {
     fontSize: 18,
@@ -321,5 +455,99 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  filtersSection: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    padding: 16,
+    borderRadius: 8,
+    ...Platform.OS === 'web' ? { boxShadow: '0 1px 2px rgba(0,0,0,0.1)' } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
+      elevation: 2,
+    }
+  },
+  filterContainer: {
+    marginBottom: 16,
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  seasonButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  filterButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    backgroundColor: '#e5e7eb',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  filterButtonActive: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#2563eb',
+  },
+  filterButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  filterButtonTextActive: {
+    color: '#ffffff',
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 6,
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  dropdownButtonText: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  dropdownMenu: {
+    backgroundColor: '#ffffff',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    marginTop: 4,
+    overflow: 'hidden',
+    maxHeight: 200,
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#dbeafe',
+  },
+  dropdownItemText: {
+    fontSize: 13,
+    color: '#374151',
+  },
+  dropdownItemTextSelected: {
+    color: '#3b82f6',
+    fontWeight: '600',
   },
 });

@@ -13,17 +13,23 @@ const MONGODB_URI = process.env.MONGODB_URI;
 console.log('🔧 Initializing server...');
 console.log('MongoDB URI:', MONGODB_URI ? 'Configured ✓' : 'NOT CONFIGURED ✗');
 
-// Middleware
-app.use(cors({
-  origin: '*',
+// OPTIONS handler FIRST, перед всеми middleware
+app.options('*', cors({
+  origin: true, // Allow any origin (will use request origin)
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: false,
 }));
-app.use(express.json({ limit: '50mb' })); // Для больших изображений в base64
 
-// Явно обрабатываем OPTIONS запросы для preflight
-app.options('*', cors());
+// CORS middleware
+app.use(cors({
+  origin: true, // Allow any origin
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+}));
+
+app.use(express.json({ limit: '50mb' })); // Для больших изображений в base64
 
 // Simple request logger to debug CORS/preflight issues
 app.use((req, res, next) => {
@@ -32,17 +38,6 @@ app.use((req, res, next) => {
     'access-control-request-method': req.headers['access-control-request-method'],
     'access-control-request-headers': req.headers['access-control-request-headers'],
   });
-  next();
-});
-
-// Дополнительный middleware для явной обработки OPTIONS
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    return res.sendStatus(200);
-  }
   next();
 });
 
@@ -104,7 +99,7 @@ const startServer = async () => {
     console.log('✅ MongoDB подключена успешно\n');
     console.log('>>> BEFORE app.listen()');
 
-    const server = app.listen(PORT, 'localhost', () => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Сервер запущен на http://localhost:${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
       console.log(`📚 API: http://localhost:${PORT}/api/wardrobe`);

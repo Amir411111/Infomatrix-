@@ -8,6 +8,7 @@ import { ClothingItem, ClothingCategory } from '../types';
 import {
   getWardrobe,
   addWardrobeItem as apiAddItem,
+  updateWardrobeItem as apiUpdateItem,
   deleteWardrobeItem as apiDeleteItem,
 } from '../services/wardrobeService';
 
@@ -20,6 +21,7 @@ interface WardrobeState {
   // Actions
   loadItems: () => Promise<void>;
   addItem: (item: Omit<ClothingItem, 'id' | 'createdAt'>) => Promise<void>;
+  updateItem: (id: string, updates: Partial<ClothingItem>) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
   getItemsByCategory: (category: ClothingCategory) => ClothingItem[];
   syncWithServer: () => Promise<void>;
@@ -93,6 +95,45 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
   },
 
   /**
+   * Обновляет вещь в гардеробе
+   * Сначала обновляет на сервере, потом локально
+   */
+  updateItem: async (id: string, updates: Partial<ClothingItem>) => {
+    set({ error: null });
+    const currentItems = get().items;
+    
+    try {
+      // Находим элемент для обновления
+      const itemToUpdate = currentItems.find(item => item.id === id || item._id === id);
+      if (!itemToUpdate) {
+        throw new Error('Вещь не найдена');
+      }
+      
+      // СНАЧАЛА обновляем на сервере
+      const updateId = itemToUpdate._id || id;
+      console.log('🔄 Обновляем на сервере ID:', updateId);
+      const updatedItem = await apiUpdateItem(updateId, updates);
+      console.log('✓ Вещь успешно обновлена на сервере');
+      
+      // ЗАТЕМ обновляем локально
+      const updatedItems = currentItems.map(item => 
+        (item.id === id || item._id === id) ? { ...item, ...updatedItem } : item
+      );
+      set({ items: updatedItems });
+      
+      // Обновляем локальное хранилище
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updatedItems));
+      console.log('✓ Вещь обновлена локально и в хранилище');
+    } catch (error) {
+      console.error('❌ Ошибка обновления вещи:', error);
+      set({ 
+        error: `Не удалось обновить вещь: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`
+      });
+      throw error;
+    }
+  },
+
+  /**
    * Удаляет вещь из гардероба
    * Сначала удаляет с сервера, потом с локального хранилища
    * Это гарантирует консистентность данных
@@ -139,7 +180,14 @@ export const useWardrobeStore = create<WardrobeState>((set, get) => ({
    * Получает вещи по категории
    */
   getItemsByCategory: (category: ClothingCategory) => {
-    return get().items.filter(item => item.category === category);
+    // Преобразуем русские названия категорий в коды для БД
+    const categoryMap: { [key: string]: string } = {
+      'Верх': 'top',
+      'Низ': 'bottom',
+      'Обувь': 'shoes',
+    };
+    const categoryCode = categoryMap[category] || category;
+    return get().items.filter(item => item.category === categoryCode);
   },
 
   /**

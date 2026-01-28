@@ -101,6 +101,9 @@ export const deleteWardrobeItem = async (id: string): Promise<void> => {
   try {
     const response = await fetch(`${API_URL}/wardrobe/${id}`, {
       method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
 
     if (!response.ok) {

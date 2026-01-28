@@ -23,6 +23,21 @@ interface AddItemFormProps {
   onClose: () => void;
 }
 
+// Список предустановленных материалов
+const PREDEFINED_MATERIALS = [
+  'Хлопок',
+  'Полиэстер',
+  'Шерсть',
+  'Шелк',
+  'Лен',
+  'Синтетика',
+  'Смесь волокон',
+  'Кожа',
+  'Замша',
+  'Джинс',
+  'Вельвет',
+];
+
 export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [category, setCategory] = useState<ClothingCategory>('Верх');
@@ -30,12 +45,25 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
   const [name, setName] = useState('');
   const [color, setColor] = useState('');
   const [material, setMaterial] = useState('');
+  const [materialDropdownOpen, setMaterialDropdownOpen] = useState(false);
+  const [customMaterial, setCustomMaterial] = useState('');
   const [notes, setNotes] = useState('');
   const [season, setSeason] = useState<string[]>(['spring', 'summer', 'autumn', 'winter']);
 
   const addItem = useWardrobeStore(state => state.addItem);
 
   const categories: ClothingCategory[] = ['Верх', 'Низ', 'Обувь'];
+
+  const handleSelectMaterial = (mat: string) => {
+    setMaterial(mat);
+    setCustomMaterial('');
+    setMaterialDropdownOpen(false);
+  };
+
+  const handleSelectCustom = () => {
+    setMaterial('');
+    setMaterialDropdownOpen(false);
+  };
 
   /**
    * Открывает камеру для фотографирования
@@ -141,7 +169,7 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
         name,
         category: categoryMap[category] as any,
         color: color || 'not specified',
-        material: material || 'not specified',
+        material: material || customMaterial || 'not specified',
         imageBase64: `data:image/jpeg;base64,${base64}`,
         notes,
         season: season,
@@ -261,16 +289,58 @@ export const AddItemForm: React.FC<AddItemFormProps> = ({ onClose }) => {
         />
       </View>
 
-      {/* Материал */}
+      {/* Материал с dropdown */}
       <View style={styles.section}>
         <Text style={styles.label}>Материал</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Например: Хлопок"
-          value={material}
-          onChangeText={setMaterial}
-          placeholderTextColor="#999"
-        />
+        <TouchableOpacity
+          style={styles.dropdownButton}
+          onPress={() => setMaterialDropdownOpen(!materialDropdownOpen)}
+        >
+          <Text style={styles.dropdownButtonText}>
+            {material || customMaterial || 'Выберите материал...'}
+          </Text>
+          <Text style={styles.dropdownArrow}>{materialDropdownOpen ? '▲' : '▼'}</Text>
+        </TouchableOpacity>
+
+        {materialDropdownOpen && (
+          <View style={styles.dropdown}>
+            {PREDEFINED_MATERIALS.map((mat) => (
+              <TouchableOpacity
+                key={mat}
+                style={[
+                  styles.dropdownItem,
+                  material === mat && styles.dropdownItemSelected,
+                ]}
+                onPress={() => handleSelectMaterial(mat)}
+              >
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    material === mat && styles.dropdownItemTextSelected,
+                  ]}
+                >
+                  {mat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={handleSelectCustom}
+            >
+              <Text style={styles.dropdownItemText}>+ Другое</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {!material && (
+          <TextInput
+            style={styles.input}
+            placeholder="Введите свой материал..."
+            value={customMaterial}
+            onChangeText={setCustomMaterial}
+            placeholderTextColor="#999"
+          />
+        )}
       </View>
 
       {/* Заметки */}
@@ -444,6 +514,51 @@ const styles = StyleSheet.create({
   },
   categoryButtonTextActive: {
     color: '#ffffff',
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  dropdownArrow: {
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  dropdown: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    marginTop: 4,
+    overflow: 'hidden',
+    maxHeight: 240,
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  dropdownItemSelected: {
+    backgroundColor: '#dbeafe',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  dropdownItemTextSelected: {
+    color: '#3b82f6',
+    fontWeight: '600',
   },
   seasonButtons: {
     flexDirection: 'row',
